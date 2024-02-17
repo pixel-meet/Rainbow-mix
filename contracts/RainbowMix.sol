@@ -3,8 +3,8 @@ pragma solidity ^0.8.20;
 
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import {IERC721Metadata} from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
+import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import { IERC721Metadata } from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import { ERC404 } from "./ERC404.sol";
 
 /**
@@ -21,6 +21,9 @@ contract RainbowMix is Ownable, ERC404 {
 
     // Mapping to store the address of the NFT contract for a given NFT token ID
     mapping(uint256 => address) private nftAddressForTokenId;
+
+    // Counter for ERC20 token IDs
+    uint256 private _erc20TokenIdCounter;
 
     constructor() ERC404("RainbowMix", "RBM", 18) Ownable(msg.sender) {
         _setERC721TransferExempt(msg.sender, true);
@@ -49,16 +52,19 @@ contract RainbowMix is Ownable, ERC404 {
 
     /**
      * @notice Transfer an NFT to this contract and bind it to an ERC20 token
-     * @param erc20TokenId The ID of the ERC20 token
      * @param nftTokenId The ID of the NFT token
      * @param nftAddress The address of the NFT contract
      */
-    function transferNft(uint256 erc20TokenId, uint256 nftTokenId, address nftAddress) external onlyOwner {
-        // Check if NFT address is allowed
+    function transferNft(uint256 nftTokenId, address nftAddress) external {
         require(isNftAddressAllowed(nftAddress), "NFT address not allowed");
-        // Transfer the NFT to this contract
-        IERC721(nftAddress).transferFrom(msg.sender, address(this), nftTokenId);
-        // Bind the NFT to the ERC20 token
+        require(_erc20TokenIdCounter < totalSupply(), "Maximum number of NFTs reached");
+
+        IERC721Metadata nftContract = IERC721Metadata(nftAddress);
+        nftContract.transferFrom(msg.sender, address(this), nftTokenId);
+
+        _erc20TokenIdCounter++;
+        uint256 erc20TokenId = _erc20TokenIdCounter;
+
         transferredNfts[erc20TokenId] = nftTokenId;
         nftAddressForTokenId[erc20TokenId] = nftAddress;
     }

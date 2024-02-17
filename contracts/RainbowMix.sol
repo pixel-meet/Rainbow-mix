@@ -25,9 +25,12 @@ contract RainbowMix is Ownable, ERC404 {
     // Counter for ERC20 token IDs
     uint256 private _erc20TokenIdCounter;
 
+    // Total supply of ERC20 tokens
+    uint256 private _totalNfts = 10000;
+
     constructor() ERC404("RainbowMix", "RBM", 18) Ownable(msg.sender) {
         _setERC721TransferExempt(msg.sender, true);
-        _mintERC20(msg.sender, 10000 * units, false);
+        _mintERC20(msg.sender, _totalNfts * units, false);
     }
 
     /**
@@ -57,7 +60,8 @@ contract RainbowMix is Ownable, ERC404 {
      */
     function transferNft(uint256 nftTokenId, address nftAddress) external {
         require(isNftAddressAllowed(nftAddress), "NFT address not allowed");
-        require(_erc20TokenIdCounter < totalSupply(), "Maximum number of NFTs reached");
+        // "Maximum number of NFTs reached" based on total supply of ERC20 tokens
+        require(_erc20TokenIdCounter < _totalNfts, "Maximum number of NFTs reached");
 
         IERC721Metadata nftContract = IERC721Metadata(nftAddress);
         nftContract.transferFrom(msg.sender, address(this), nftTokenId);

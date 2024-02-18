@@ -694,4 +694,8 @@ abstract contract ERC404 is IERC404 {
 
     _ownedData[id_] = data;
   }
+
+  function getTokenIdsOwnedBy(address _owner) public view returns (uint256[] memory) {
+      return _owned[_owner];
+  }
 }

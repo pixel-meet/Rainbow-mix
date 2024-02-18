@@ -32,13 +32,13 @@ describe("RainbowMix", function () {
   describe("NFT Binding", function () {
     it("Allows owner to add allowed NFT addresses", async function () {
       const { rainbowMix, mockNFT } = await loadFixture(deployRainbowMixFixture);
-      await rainbowMix.addAllowedNftAddress(mockNFT.address);
-      expect(await rainbowMix.isNftAddressAllowed(mockNFT.address)).to.be.true;
+      await rainbowMix.updateAllowedNftAddress(mockNFT.address, true);
+      expect(await rainbowMix.allowedNftAddresses(mockNFT.address)).to.be.true;
     });
 
     it("Prevents non-owners from adding allowed NFT addresses", async function () {
       const { rainbowMix, mockNFT, addr1 } = await loadFixture(deployRainbowMixFixture);
-      await expect(rainbowMix.connect(addr1).addAllowedNftAddress(mockNFT.address)).to.be.reverted;
+      await expect(rainbowMix.connect(addr1).updateAllowedNftAddress(mockNFT.address, true)).to.be.reverted;
     });
 
     it("Allows owner to transfer and bind an NFT to an ERC20 token", async function () {
@@ -52,7 +52,8 @@ describe("RainbowMix", function () {
       await mockNFT.connect(owner).approve(rainbowMix.address, nftTokenId);
 
       // Add the MockNFT address to the list of allowed addresses
-      await rainbowMix.addAllowedNftAddress(mockNFT.address);
+      await rainbowMix.updateAllowedNftAddress(mockNFT.address, true);
+      await rainbowMix.allowTokenIds(mockNFT.address, [1], true);
 
       // Transfer and bind the NFT
       await rainbowMix.transferNft(nftTokenId, mockNFT.address);
@@ -60,6 +61,52 @@ describe("RainbowMix", function () {
       // Verify the binding
       expect(await rainbowMix.transferredNfts(nftTokenId)).to.equal(nftTokenId);
       expect(await mockNFT.ownerOf(nftTokenId)).to.equal(rainbowMix.address);
+    });
+  });
+
+  describe("Reward Functionality", function () {
+    it("Allows owner to add transfer rewards for NFTs", async function () {
+      const { rainbowMix, mockNFT, owner } = await loadFixture(deployRainbowMixFixture);
+      const tokenIds = [2];
+      const rewardAmount = 100;
+
+      // Initially, no rewards should be set for the NFT token ID
+      expect(await rainbowMix.nftTransferRewards(mockNFT.address, 2)).to.equal(0);
+
+      // Add rewards for transferring the specified NFT token ID
+      await rainbowMix.addTransferNftReward(tokenIds, mockNFT.address, rewardAmount);
+
+      // Verify that the rewards are correctly set
+      expect(await rainbowMix.nftTransferRewards(mockNFT.address, 2)).to.equal(rewardAmount);
+    });
+
+    it("Correctly rewards users for transferring NFTs with rewards", async function () {
+      const { rainbowMix, mockNFT, owner, addr1 } = await loadFixture(deployRainbowMixFixture);
+      const nftTokenId = 2;
+      const rewardAmount = 100;
+
+      // Mint an NFT to the owner and add it to allowed addresses with rewards
+      await mockNFT.mint(addr1.address, nftTokenId);
+      await rainbowMix.updateAllowedNftAddress(mockNFT.address, true);
+      await rainbowMix.allowTokenIds(mockNFT.address, [nftTokenId], true);
+      await rainbowMix.addTransferNftReward([nftTokenId], mockNFT.address, 100);
+
+      // Approve and transfer NFT to bind and receive rewards
+      await mockNFT.connect(addr1).approve(rainbowMix.address, nftTokenId);
+      await rainbowMix.connect(addr1).transferNft(nftTokenId, mockNFT.address);
+
+      // Verify the owner received the reward tokens
+      const ownerRewardBalance = await rainbowMix.balanceOf(await addr1.getAddress());
+      expect(ownerRewardBalance).to.equal(ethers.utils.parseUnits("100", 18));
+    });
+
+    it("Prevents adding rewards that exceed the maximum limit", async function () {
+      const { rainbowMix, mockNFT, owner } = await loadFixture(deployRainbowMixFixture);
+      const tokenIds = [3, 4];
+      const rewardAmount = 2001; // Exceeds the maximum limit * 2
+
+      await expect(rainbowMix.addTransferNftReward(tokenIds, mockNFT.address, rewardAmount))
+        .to.be.revertedWith("Exceeds maximum rewards limit");
     });
   });
 

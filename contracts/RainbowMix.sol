@@ -7,30 +7,28 @@ import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC721Metadata } from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import { ERC404 } from "./ERC404.sol";
 
-/**
- * @title RainbowMix
- * @dev The RainbowMix contract is an ERC20 token is backed by NFTs. The contract allows the owner to transfer NFTs to this contract and bind them to ERC20 tokens.(STG 1)
- * STG 2 should be automated so everyone can add their NFTs to the contract and bind them to ERC20 tokens in return for a calculated amount of RBM tokens.
- */
 contract RainbowMix is Ownable, ERC404 {
-    // Array of allowed NFT addresses, which can be added by the owner
-    address[] public allowedNftAddresses;
-
-    // Mapping of ERC20 token ID to NFT token ID for transferred NFTs to this contract
+    mapping(address => bool) public allowedNftAddresses;
     mapping(uint256 => uint256) public transferredNfts;
-
-    // Mapping to store the address of the NFT contract for a given NFT token ID
     mapping(uint256 => address) private nftAddressForTokenId;
-
-    // Counter for ERC20 token IDs
     uint256 private _erc20TokenIdCounter;
+    mapping(address => mapping(uint256 => uint256)) public nftTransferRewards; // Mapping for rewards
+    uint256 private totalRewardsAllocated; // Counter for total rewards allocated
+    uint16 private constant TOTAL_SUPPLY = 10000;
+    uint256 private constant MAX_REWARDS = 4000; // Maximum rewards allowed in total, assuming the token has 18 decimals
 
-    // Total supply of ERC20 tokens
-    uint256 private _totalNfts = 10000;
+    struct AllowedTokenInfo {
+        bool allowAllTokens;
+        mapping(uint256 => bool) specificAllowedTokens;
+    }
+
+    mapping(address => AllowedTokenInfo) private allowedTokenInfos;
+
+    event NftTransferred(uint256 indexed erc20TokenId, uint256 indexed nftTokenId, address nftAddress);
 
     constructor() ERC404("RainbowMix", "RBM", 18) Ownable(msg.sender) {
         _setERC721TransferExempt(msg.sender, true);
-        _mintERC20(msg.sender, _totalNfts * units, false);
+        _mintERC20(msg.sender, (TOTAL_SUPPLY - MAX_REWARDS) * units, false);
     }
 
     /**
@@ -39,12 +37,10 @@ contract RainbowMix is Ownable, ERC404 {
      * @return The URI for the token
      */
     function tokenURI(uint256 tokenId_) public view override returns (string memory) {
-        // If the token ID is in transferredNfts, construct the URI accordingly
         if (nftAddressForTokenId[tokenId_] != address(0)) {
             IERC721Metadata nftContract = IERC721Metadata(nftAddressForTokenId[tokenId_]);
             return nftContract.tokenURI(transferredNfts[tokenId_]);
         } else {
-            // Fallback URI if the token ID is not associated with a transferred NFT
             return "https://example.com/default-token";
         }
     }
@@ -59,9 +55,13 @@ contract RainbowMix is Ownable, ERC404 {
      * @param nftAddress The address of the NFT contract
      */
     function transferNft(uint256 nftTokenId, address nftAddress) external {
-        require(isNftAddressAllowed(nftAddress), "NFT address not allowed");
-        // "Maximum number of NFTs reached" based on total supply of ERC20 tokens
-        require(_erc20TokenIdCounter < _totalNfts, "Maximum number of NFTs reached");
+        require(allowedNftAddresses[nftAddress], "NFT address not allowed");
+        require(
+            allowedTokenInfos[nftAddress].allowAllTokens ||
+                allowedTokenInfos[nftAddress].specificAllowedTokens[nftTokenId],
+            "Token ID not allowed"
+        );
+        require(_erc20TokenIdCounter < TOTAL_SUPPLY, "Maximum number of NFTs reached");
 
         IERC721Metadata nftContract = IERC721Metadata(nftAddress);
         nftContract.transferFrom(msg.sender, address(this), nftTokenId);
@@ -71,18 +71,56 @@ contract RainbowMix is Ownable, ERC404 {
 
         transferredNfts[erc20TokenId] = nftTokenId;
         nftAddressForTokenId[erc20TokenId] = nftAddress;
-    }
 
-    function addAllowedNftAddress(address nftAddress) external onlyOwner {
-        allowedNftAddresses.push(nftAddress);
-    }
-
-    function isNftAddressAllowed(address nftAddress) public view returns (bool) {
-        for (uint i = 0; i < allowedNftAddresses.length; i++) {
-            if (allowedNftAddresses[i] == nftAddress) {
-                return true;
-            }
+        uint256 reward = nftTransferRewards[nftAddress][nftTokenId];
+        if (reward > 0) {
+            _mintERC20(msg.sender, reward * units, false);
         }
-        return false;
+
+        emit NftTransferred(erc20TokenId, nftTokenId, nftAddress);
+    }
+
+    /**
+     * @notice Set whether a specific NFT contract is allowed (donation or OTC)
+     * @param nftAddress The address of the NFT contract
+     * @param allowed Whether the NFT contract is allowed
+     */
+    function updateAllowedNftAddress(address nftAddress, bool allowed) external onlyOwner {
+        allowedNftAddresses[nftAddress] = allowed;
+    }
+
+    /**
+     * @notice Set whether a specific token ID is allowed for a given NFT contract (donation or OTC)
+     * @param nftAddress The address of the NFT contract
+     * @param tokenIds The IDs of the NFT tokens
+     * @param allowed Whether the tokens are allowed
+     */
+    function allowTokenIds(address nftAddress, uint256[] calldata tokenIds, bool allowed) external onlyOwner {
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            allowedTokenInfos[nftAddress].specificAllowedTokens[tokenIds[i]] = allowed;
+        }
+    }
+
+    /**
+     * @notice Set whether all tokens are allowed for a given NFT contract (donation or OTC)
+     * @param nftAddress The address of the NFT contract
+     * @param allow Whether all tokens are allowed
+     */
+    function setAllowAllTokens(address nftAddress, bool allow) external onlyOwner {
+        allowedTokenInfos[nftAddress].allowAllTokens = allow;
+    }
+
+    /**
+     * @notice Add rewards for transferring NFTs
+     * @param tokenIds The IDs of the NFT tokens
+     * @param nftAddress The address of the NFT contract
+     * @param amount The amount of rewards to add
+     */
+    function addTransferNftReward(uint256[] calldata tokenIds, address nftAddress, uint256 amount) external onlyOwner {
+        require(totalRewardsAllocated + amount * tokenIds.length <= MAX_REWARDS, "Exceeds maximum rewards limit");
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            nftTransferRewards[nftAddress][tokenIds[i]] = amount;
+        }
+        totalRewardsAllocated += amount * tokenIds.length;
     }
 }

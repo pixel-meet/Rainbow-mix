@@ -23,12 +23,20 @@ contract RainbowMix is Ownable, ERC404 {
     }
 
     mapping(address => AllowedTokenInfo) private allowedTokenInfos;
+    bool public canRedeem = true; // if anything goes wrong, we start with a redeemable state
 
     event NftTransferred(uint256 indexed erc20TokenId, uint256 indexed nftTokenId, address nftAddress);
 
     constructor() ERC404("RainbowMix", "RBM", 18) Ownable(msg.sender) {
         _setERC721TransferExempt(msg.sender, true);
         _mintERC20(msg.sender, (TOTAL_SUPPLY - MAX_REWARDS) * units, false);
+    }
+
+    /**
+     * @notice to disable the redemption of NFTs by the owner to prevent any potential abuse
+     */
+    function disableRedemption() external onlyOwner {
+        canRedeem = false;
     }
 
     /**
@@ -122,5 +130,21 @@ contract RainbowMix is Ownable, ERC404 {
             nftTransferRewards[nftAddress][tokenIds[i]] = amount;
         }
         totalRewardsAllocated += amount * tokenIds.length;
+    }
+
+    /**
+     * @notice Allows the contract owner to redeem an NFT held by the contract. IMPORTANT to trust the owner.
+     * @param nftTokenId The ID of the NFT to redeem.
+     * @param nftAddress The address of the NFT contract.
+     */
+    function emergencyRedeemNft(uint256 nftTokenId, address nftAddress) external onlyOwner {
+        require(canRedeem, "Redemption is disabled");
+        require(nftAddressForTokenId[nftTokenId] == nftAddress, "NFT does not match stored address");
+        IERC721 nftContract = IERC721(nftAddress);
+
+        // Transfer the NFT from the contract to the owner.
+        nftContract.transferFrom(address(this), owner(), nftTokenId);
+
+        delete nftAddressForTokenId[nftTokenId];
     }
 }

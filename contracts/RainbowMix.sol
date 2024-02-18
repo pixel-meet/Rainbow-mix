@@ -49,7 +49,7 @@ contract RainbowMix is Ownable, ERC404 {
             IERC721Metadata nftContract = IERC721Metadata(nftAddressForTokenId[tokenId_]);
             return nftContract.tokenURI(transferredNfts[tokenId_]);
         } else {
-            return "https://example.com/default-token";
+            return "https://raw.githubusercontent.com/pixel-meet/Rainbow-mix/main/default.json";
         }
     }
 

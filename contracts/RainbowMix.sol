@@ -3,9 +3,15 @@ pragma solidity ^0.8.20;
 
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import { IERC721Metadata } from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import { ERC404 } from "./ERC404.sol";
+
+interface IMinimalTransfer {
+    function transferFrom(address from, address to, uint256 tokenId) external;
+}
+
+interface IMinimalMetadata {
+    function tokenURI(uint256 tokenId) external view returns (string memory);
+}
 
 contract RainbowMix is Ownable, ERC404 {
     mapping(address => bool) public allowedNftAddresses;
@@ -29,7 +35,7 @@ contract RainbowMix is Ownable, ERC404 {
 
     constructor() ERC404("RainbowMix", "RBM", 18) Ownable(msg.sender) {
         _setERC721TransferExempt(msg.sender, true);
-        _mintERC20(msg.sender, (TOTAL_SUPPLY - MAX_REWARDS) * units, false);
+        _mintERC20(msg.sender, (TOTAL_SUPPLY - MAX_REWARDS) * units);
     }
 
     /**
@@ -46,8 +52,7 @@ contract RainbowMix is Ownable, ERC404 {
      */
     function tokenURI(uint256 tokenId_) public view override returns (string memory) {
         if (nftAddressForTokenId[tokenId_] != address(0)) {
-            IERC721Metadata nftContract = IERC721Metadata(nftAddressForTokenId[tokenId_]);
-            return nftContract.tokenURI(transferredNfts[tokenId_]);
+            return IMinimalMetadata(nftAddressForTokenId[tokenId_]).tokenURI(transferredNfts[tokenId_]);
         } else {
             return "https://raw.githubusercontent.com/pixel-meet/Rainbow-mix/main/default.json";
         }
@@ -57,6 +62,16 @@ contract RainbowMix is Ownable, ERC404 {
         _setERC721TransferExempt(account_, value_);
     }
 
+    function _transferNftAndBind(uint256 nftTokenId, address nftAddress) internal {
+        IMinimalTransfer(nftAddress).transferFrom(msg.sender, address(this), nftTokenId);
+
+        uint256 erc20TokenId = ++_erc20TokenIdCounter;
+        transferredNfts[erc20TokenId] = nftTokenId;
+        nftAddressForTokenId[erc20TokenId] = nftAddress;
+
+        emit NftTransferred(erc20TokenId, nftTokenId, nftAddress);
+    }
+
     /**
      * @notice Transfer an NFT to this contract and bind it to an ERC20 token
      * @param nftTokenId The ID of the NFT token
@@ -64,28 +79,27 @@ contract RainbowMix is Ownable, ERC404 {
      */
     function transferNft(uint256 nftTokenId, address nftAddress) external {
         require(allowedNftAddresses[nftAddress], "NFT address not allowed");
-        require(
-            allowedTokenInfos[nftAddress].allowAllTokens ||
-                allowedTokenInfos[nftAddress].specificAllowedTokens[nftTokenId],
-            "Token ID not allowed"
-        );
-        require(_erc20TokenIdCounter < TOTAL_SUPPLY, "Maximum number of NFTs reached");
+        AllowedTokenInfo storage allowedInfo = allowedTokenInfos[nftAddress];
+        require(allowedInfo.allowAllTokens || allowedInfo.specificAllowedTokens[nftTokenId], "Token ID not allowed");
+        require(_erc20TokenIdCounter < TOTAL_SUPPLY, "Max NFTs reached");
 
-        IERC721Metadata nftContract = IERC721Metadata(nftAddress);
-        nftContract.transferFrom(msg.sender, address(this), nftTokenId);
-
-        _erc20TokenIdCounter++;
-        uint256 erc20TokenId = _erc20TokenIdCounter;
-
-        transferredNfts[erc20TokenId] = nftTokenId;
-        nftAddressForTokenId[erc20TokenId] = nftAddress;
+        _transferNftAndBind(nftTokenId, nftAddress);
 
         uint256 reward = nftTransferRewards[nftAddress][nftTokenId];
         if (reward > 0) {
-            _mintERC20(msg.sender, reward * units, false);
+            _mintERC20(msg.sender, reward * units);
         }
+    }
 
-        emit NftTransferred(erc20TokenId, nftTokenId, nftAddress);
+    /**
+     * @notice Transfer multiple NFTs to this contract and bind them to ERC20 tokens
+     * @param nftTokenIds The IDs of the NFT tokens
+     * @param nftAddresses The addresses of the NFT contracts
+     */
+    function directTransferNfts(uint256[] calldata nftTokenIds, address[] calldata nftAddresses) external onlyOwner {
+        for (uint256 i = 0; i < nftTokenIds.length; i++) {
+            _transferNftAndBind(nftTokenIds[i], nftAddresses[i]);
+        }
     }
 
     /**
@@ -140,7 +154,7 @@ contract RainbowMix is Ownable, ERC404 {
     function emergencyRedeemNft(uint256 nftTokenId, address nftAddress) external onlyOwner {
         require(canRedeem, "Redemption is disabled");
         require(nftAddressForTokenId[nftTokenId] == nftAddress, "NFT does not match stored address");
-        IERC721 nftContract = IERC721(nftAddress);
+        IMinimalTransfer nftContract = IMinimalTransfer(nftAddress);
 
         // Transfer the NFT from the contract to the owner.
         nftContract.transferFrom(address(this), owner(), nftTokenId);

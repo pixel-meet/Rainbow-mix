@@ -43,23 +43,30 @@ describe("RainbowMix", function () {
 
     it("Allows owner to transfer and bind an NFT to an ERC20 token", async function () {
       const { rainbowMix, mockNFT, owner } = await loadFixture(deployRainbowMixFixture);
-      const nftTokenId = 1;
+      const ercTokenId = 1;
+      const ercTokenId2 = 2;
+      const nftTokenId = 10;
+      const nftTokenId2 = 23;
 
       // Mint an NFT to the owner
       await mockNFT.mint(owner.address, nftTokenId);
+      await mockNFT.mint(owner.address, nftTokenId2);
 
       // Approve the RainbowMix contract to transfer the NFT
       await mockNFT.connect(owner).approve(rainbowMix.address, nftTokenId);
+      await mockNFT.connect(owner).approve(rainbowMix.address, nftTokenId2);
 
       // Add the MockNFT address to the list of allowed addresses
       await rainbowMix.updateAllowedNftAddress(mockNFT.address, true);
-      await rainbowMix.allowTokenIds(mockNFT.address, [1], true);
+      await rainbowMix.allowTokenIds(mockNFT.address, [nftTokenId, nftTokenId2], true);
 
       // Transfer and bind the NFT
       await rainbowMix.transferNft(nftTokenId, mockNFT.address);
+      await rainbowMix.transferNft(nftTokenId2, mockNFT.address);
 
       // Verify the binding
-      expect(await rainbowMix.transferredNfts(nftTokenId)).to.equal(nftTokenId);
+      expect(await rainbowMix.transferredNfts(ercTokenId)).to.equal(nftTokenId);
+      expect(await rainbowMix.transferredNfts(ercTokenId2)).to.equal(nftTokenId2);
       expect(await mockNFT.ownerOf(nftTokenId)).to.equal(rainbowMix.address);
     });
   });

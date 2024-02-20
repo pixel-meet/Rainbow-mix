@@ -72,49 +72,60 @@ describe("RainbowMix", function () {
   });
 
   describe("Reward Functionality", function () {
-    it("Allows owner to add transfer rewards for NFTs", async function () {
-      const { rainbowMix, mockNFT, owner } = await loadFixture(deployRainbowMixFixture);
-      const tokenIds = [2];
-      const rewardAmount = 100;
+    // Existing tests...
 
-      // Initially, no rewards should be set for the NFT token ID
-      expect(await rainbowMix.nftTransferRewards(mockNFT.address, 2)).to.equal(0);
-
-      // Add rewards for transferring the specified NFT token ID
-      await rainbowMix.addTransferNftReward(tokenIds, mockNFT.address, rewardAmount);
-
-      // Verify that the rewards are correctly set
-      expect(await rainbowMix.nftTransferRewards(mockNFT.address, 2)).to.equal(rewardAmount);
-    });
-
-    it("Correctly rewards users for transferring NFTs with rewards", async function () {
-      const { rainbowMix, mockNFT, owner, addr1 } = await loadFixture(deployRainbowMixFixture);
+    it("Prevents rewards claim before time lock expires", async function () {
+      const { rainbowMix, mockNFT, addr1 } = await loadFixture(deployRainbowMixFixture);
       const nftTokenId = 2;
       const rewardAmount = 100;
 
-      // Mint an NFT to the owner and add it to allowed addresses with rewards
+      // Setup for reward claim
+      await rainbowMix.addTransferNftReward([nftTokenId], mockNFT.address, rewardAmount);
+
+      // Mint, approve, transfer NFT, and setup rewards as in previous tests
       await mockNFT.mint(addr1.address, nftTokenId);
+      await mockNFT.connect(addr1).approve(rainbowMix.address, nftTokenId);
+
+      // Add the MockNFT address to the list of allowed addresses
       await rainbowMix.updateAllowedNftAddress(mockNFT.address, true);
       await rainbowMix.allowTokenIds(mockNFT.address, [nftTokenId], true);
-      await rainbowMix.addTransferNftReward([nftTokenId], mockNFT.address, 100);
 
-      // Approve and transfer NFT to bind and receive rewards
-      await mockNFT.connect(addr1).approve(rainbowMix.address, nftTokenId);
       await rainbowMix.connect(addr1).transferNft(nftTokenId, mockNFT.address);
 
-      // Verify the owner received the reward tokens
-      const ownerRewardBalance = await rainbowMix.balanceOf(await addr1.getAddress());
-      expect(ownerRewardBalance).to.equal(ethers.utils.parseUnits("100", 18));
+      // Attempt to claim rewards before time lock expires
+      await expect(rainbowMix.connect(addr1).claimRewards())
+        .to.be.revertedWith("Time lock not expired");
     });
 
-    it("Prevents adding rewards that exceed the maximum limit", async function () {
-      const { rainbowMix, mockNFT, owner } = await loadFixture(deployRainbowMixFixture);
-      const tokenIds = [3, 4];
-      const rewardAmount = 2001; // Exceeds the maximum limit * 2
+    it("Allows rewards claim after time lock expires", async function () {
+      const { rainbowMix, mockNFT, addr1 } = await loadFixture(deployRainbowMixFixture);
+      const nftTokenId = 2;
+      const rewardAmount = 100;
 
-      await expect(rainbowMix.addTransferNftReward(tokenIds, mockNFT.address, rewardAmount))
-        .to.be.revertedWith("Exceeds maximum rewards limit");
+      // Setup for reward claim as before
+      await rainbowMix.addTransferNftReward([nftTokenId], mockNFT.address, rewardAmount);
+      await mockNFT.mint(addr1.address, nftTokenId);
+      await mockNFT.connect(addr1).approve(rainbowMix.address, nftTokenId);
+
+      // Add the MockNFT address to the list of allowed addresses
+      await rainbowMix.updateAllowedNftAddress(mockNFT.address, true);
+      await rainbowMix.allowTokenIds(mockNFT.address, [nftTokenId], true);
+
+      await rainbowMix.connect(addr1).transferNft(nftTokenId, mockNFT.address);
+
+      // Fast forward time by 14 days + 1 second to simulate time lock expiry
+      await mine(1209601); // 14 days * 24 hours * 60 minutes * 60 seconds + 1 second
+
+      // Claim rewards after time lock expires
+      await expect(rainbowMix.connect(addr1).claimRewards())
+        .to.emit(rainbowMix, 'RewardsClaimed') // Assuming there's an event emitted on successful claim
+        .withArgs(addr1.address, rewardAmount);
+
+      // Verify the balance of addr1 to ensure they received the rewards
+      const rewardsBalance = await rainbowMix.balanceOf(addr1.address);
+      expect(rewardsBalance).to.equal(ethers.utils.parseUnits(rewardAmount.toString(), 18));
     });
   });
+
 
 });

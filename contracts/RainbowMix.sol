@@ -17,6 +17,8 @@ contract RainbowMix is Ownable, ERC404 {
     mapping(address => bool) public allowedNftAddresses;
     mapping(uint256 => uint256) public transferredNfts;
     mapping(uint256 => address) private nftAddressForTokenId;
+    mapping(address => uint256) public claimableRewards;
+    mapping(address => uint256) public timeLock;
     uint256 private _erc20TokenIdCounter;
     mapping(address => mapping(uint256 => uint256)) public nftTransferRewards; // Mapping for rewards
     uint256 private totalRewardsAllocated; // Counter for total rewards allocated
@@ -32,7 +34,8 @@ contract RainbowMix is Ownable, ERC404 {
     bool public canRedeem = true; // if anything goes wrong, we start with a redeemable state
 
     event NftTransferred(uint256 indexed erc20TokenId, uint256 indexed nftTokenId, address nftAddress);
-
+    event RewardsClaimed(address indexed account, uint256 amount);
+    
     constructor() ERC404("RainbowMix", "RBM", 18) Ownable(msg.sender) {
         _setERC721TransferExempt(msg.sender, true);
         _mintERC20(msg.sender, (TOTAL_SUPPLY - MAX_REWARDS) * units);
@@ -73,7 +76,7 @@ contract RainbowMix is Ownable, ERC404 {
     }
 
     /**
-     * @notice Transfer an NFT to this contract and bind it to an ERC20 token
+     * @notice Transfer an NFT to this contract and bind it to an ERC20 token, setting a reward for the transfer
      * @param nftTokenId The ID of the NFT token
      * @param nftAddress The address of the NFT contract
      */
@@ -87,8 +90,25 @@ contract RainbowMix is Ownable, ERC404 {
 
         uint256 reward = nftTransferRewards[nftAddress][nftTokenId];
         if (reward > 0) {
-            _mintERC20(msg.sender, reward * units);
+            claimableRewards[msg.sender] += reward;
+            timeLock[msg.sender] = block.timestamp + 14 days;
         }
+    }
+
+    /**
+     * @notice Claim rewards for transferring NFTs (after time lock 14 days)
+     */
+    function claimRewards() external {
+        require(block.timestamp >= timeLock[msg.sender], "Time lock not expired");
+
+        uint256 reward = claimableRewards[msg.sender];
+        require(reward > 0, "No rewards to claim");
+
+        _mintERC20(msg.sender, reward * units);
+        claimableRewards[msg.sender] = 0;
+        timeLock[msg.sender] = 0;
+
+        emit RewardsClaimed(msg.sender, reward);
     }
 
     /**

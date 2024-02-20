@@ -44,29 +44,52 @@ describe("RainbowMix", function () {
     it("Allows owner to transfer and bind an NFT to an ERC20 token", async function () {
       const { rainbowMix, mockNFT, owner } = await loadFixture(deployRainbowMixFixture);
       const ercTokenId = 1;
-      const ercTokenId2 = 2;
+      const ercTokenId2 = 2001;
+      const ercTokenId3 = 4001;
+      const ercTokenId4 = 6001;
+      const ercTokenId5 = 8001;
+      const ercTokenId6 = 2;
       const nftTokenId = 10;
-      const nftTokenId2 = 23;
+      const nftTokenId2 = 22;
+      const nftTokenId3 = 23;
+      const nftTokenId4 = 24;
+      const nftTokenId5 = 25;
+      const nftTokenId6 = 26;
 
       // Mint an NFT to the owner
       await mockNFT.mint(owner.address, nftTokenId);
       await mockNFT.mint(owner.address, nftTokenId2);
+      await mockNFT.mint(owner.address, nftTokenId3);
+      await mockNFT.mint(owner.address, nftTokenId4);
+      await mockNFT.mint(owner.address, nftTokenId5);
+      await mockNFT.mint(owner.address, nftTokenId6);
 
       // Approve the RainbowMix contract to transfer the NFT
       await mockNFT.connect(owner).approve(rainbowMix.address, nftTokenId);
       await mockNFT.connect(owner).approve(rainbowMix.address, nftTokenId2);
-
+      await mockNFT.connect(owner).approve(rainbowMix.address, nftTokenId3);
+      await mockNFT.connect(owner).approve(rainbowMix.address, nftTokenId4);
+      await mockNFT.connect(owner).approve(rainbowMix.address, nftTokenId5);
+      await mockNFT.connect(owner).approve(rainbowMix.address, nftTokenId6);
       // Add the MockNFT address to the list of allowed addresses
       await rainbowMix.updateAllowedNftAddress(mockNFT.address, true);
-      await rainbowMix.allowTokenIds(mockNFT.address, [nftTokenId, nftTokenId2], true);
+      await rainbowMix.allowTokenIds(mockNFT.address, [nftTokenId, nftTokenId2, nftTokenId3, nftTokenId4, nftTokenId5, nftTokenId6], true);
 
       // Transfer and bind the NFT
       await rainbowMix.transferNft(nftTokenId, mockNFT.address);
       await rainbowMix.transferNft(nftTokenId2, mockNFT.address);
+      await rainbowMix.transferNft(nftTokenId3, mockNFT.address);
+      await rainbowMix.transferNft(nftTokenId4, mockNFT.address);
+      await rainbowMix.transferNft(nftTokenId5, mockNFT.address);
+      await rainbowMix.transferNft(nftTokenId6, mockNFT.address);
 
       // Verify the binding
       expect(await rainbowMix.transferredNfts(ercTokenId)).to.equal(nftTokenId);
       expect(await rainbowMix.transferredNfts(ercTokenId2)).to.equal(nftTokenId2);
+      expect(await rainbowMix.transferredNfts(ercTokenId3)).to.equal(nftTokenId3);
+      expect(await rainbowMix.transferredNfts(ercTokenId4)).to.equal(nftTokenId4);
+      expect(await rainbowMix.transferredNfts(ercTokenId5)).to.equal(nftTokenId5);
+      expect(await rainbowMix.transferredNfts(ercTokenId6)).to.equal(nftTokenId6);
       expect(await mockNFT.ownerOf(nftTokenId)).to.equal(rainbowMix.address);
     });
   });

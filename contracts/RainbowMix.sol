@@ -19,12 +19,18 @@ contract RainbowMix is Ownable, ERC404 {
     mapping(uint256 => address) private nftAddressForTokenId;
     mapping(address => uint256) public claimableRewards;
     mapping(address => uint256) public timeLock;
-    uint256 private _erc20TokenIdCounter;
     mapping(address => mapping(uint256 => uint256)) public nftTransferRewards; // Mapping for rewards
     uint256 private totalRewardsAllocated; // Counter for total rewards allocated
-    uint16 private constant TOTAL_SUPPLY = 10000;
+    uint256 private _erc20TokenIdCounter = 0;
+    uint256 private _groupCounter = 0;
+
+    uint256 private constant GROUP_SIZE = 2000;
+    uint256 private constant TOTAL_GROUPS = 5;
+    uint256 private constant TOTAL_SUPPLY = GROUP_SIZE * TOTAL_GROUPS;
     uint256 private constant MAX_REWARDS = 4000; // Maximum rewards allowed in total, assuming the token has 18 decimals
 
+    uint256[TOTAL_GROUPS] private _idsAllocatedInGroup;
+    
     struct AllowedTokenInfo {
         bool allowAllTokens;
         mapping(uint256 => bool) specificAllowedTokens;
@@ -35,7 +41,7 @@ contract RainbowMix is Ownable, ERC404 {
 
     event NftTransferred(uint256 indexed erc20TokenId, uint256 indexed nftTokenId, address nftAddress);
     event RewardsClaimed(address indexed account, uint256 amount);
-    
+
     constructor() ERC404("RainbowMix", "RBM", 18) Ownable(msg.sender) {
         _setERC721TransferExempt(msg.sender, true);
         _mintERC20(msg.sender, (TOTAL_SUPPLY - MAX_REWARDS) * units);
@@ -65,10 +71,25 @@ contract RainbowMix is Ownable, ERC404 {
         _setERC721TransferExempt(account_, value_);
     }
 
+    /**
+     * @notice Get the next available token ID
+     * @return The next available token ID
+     */
+    function _getNextTokenId() private returns (uint256) {
+        require(_erc20TokenIdCounter < GROUP_SIZE * TOTAL_GROUPS, "Max supply reached");
+        uint256 startIdOfGroup = _groupCounter * GROUP_SIZE + 1;
+        uint256 nextIdInGroup = startIdOfGroup + _idsAllocatedInGroup[_groupCounter];
+        _idsAllocatedInGroup[_groupCounter]++;
+        _erc20TokenIdCounter++;
+        _groupCounter = (_groupCounter + 1) % TOTAL_GROUPS;
+
+        return nextIdInGroup;
+    }
+
     function _transferNftAndBind(uint256 nftTokenId, address nftAddress) internal {
         IMinimalTransfer(nftAddress).transferFrom(msg.sender, address(this), nftTokenId);
 
-        uint256 erc20TokenId = ++_erc20TokenIdCounter;
+        uint256 erc20TokenId = _getNextTokenId();
         transferredNfts[erc20TokenId] = nftTokenId;
         nftAddressForTokenId[erc20TokenId] = nftAddress;
 

@@ -4,6 +4,19 @@ pragma solidity ^0.8.20;
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { ERC404 } from "./ERC404.sol";
+import "./lib/Redeem.sol";
+
+error MaxSupplyReached();
+error NftAddressNotAllowed();
+error TokenIdNotAllowed();
+error MaxNftsReached();
+error NoRewardsToClaim();
+error TimeLockNotExpired();
+error RedemptionDisabled();
+error NftDoesNotMatchStoredAddress();
+error NoNftAssociatedWithToken();
+error NotTheTokenOwner();
+error RedemptionPeriodNotPassed();
 
 interface IMinimalTransfer {
     function transferFrom(address from, address to, uint256 tokenId) external;
@@ -14,6 +27,9 @@ interface IMinimalMetadata {
 }
 
 contract RainbowMix is Ownable, ERC404 {
+    using Redeem for Redeem.Redemption;
+    Redeem.Redemption private redemption;
+
     mapping(address => bool) public allowedNftAddresses;
     mapping(uint256 => uint256) public transferredNfts;
     mapping(uint256 => address) private nftAddressForTokenId;
@@ -24,13 +40,14 @@ contract RainbowMix is Ownable, ERC404 {
     uint256 private _erc20TokenIdCounter = 0;
     uint256 private _groupCounter = 0;
 
-    uint256 private constant GROUP_SIZE = 2000;
-    uint256 private constant TOTAL_GROUPS = 5;
-    uint256 private constant TOTAL_SUPPLY = GROUP_SIZE * TOTAL_GROUPS;
-    uint256 private constant MAX_REWARDS = 4000; // Maximum rewards allowed in total, assuming the token has 18 decimals
+    uint16 private constant GROUP_SIZE = 2000;
+    uint16 private constant TOTAL_GROUPS = 5;
+    uint16 private constant TOTAL_SUPPLY = GROUP_SIZE * TOTAL_GROUPS;
+    uint16 private constant MAX_REWARDS = 4000;
+    uint64 private constant REDEMTION_PERIOD = 120 days;
 
     uint256[TOTAL_GROUPS] private _idsAllocatedInGroup;
-    
+
     struct AllowedTokenInfo {
         bool allowAllTokens;
         mapping(uint256 => bool) specificAllowedTokens;
@@ -41,24 +58,18 @@ contract RainbowMix is Ownable, ERC404 {
 
     event NftTransferred(uint256 indexed erc20TokenId, uint256 indexed nftTokenId, address nftAddress);
     event RewardsClaimed(address indexed account, uint256 amount);
+    event NFTClaimed(address indexed account, uint256 indexed erc20TokenId, address nftAddress, uint256 nftTokenId);
 
     constructor() ERC404("RainbowMix", "RBM", 18) Ownable(msg.sender) {
         _setERC721TransferExempt(msg.sender, true);
         _mintERC20(msg.sender, (TOTAL_SUPPLY - MAX_REWARDS) * units);
+        redemption.initialize(REDEMTION_PERIOD);
     }
 
-    /**
-     * @notice to disable the redemption of NFTs by the owner to prevent any potential abuse
-     */
     function disableRedemption() external onlyOwner {
         canRedeem = false;
     }
 
-    /**
-     * @notice Returns the URI for a given token ID by checking if the token ID is associated with a transferred NFT
-     * @param tokenId_ The ID of the token
-     * @return The URI for the token
-     */
     function tokenURI(uint256 tokenId_) public view override returns (string memory) {
         if (nftAddressForTokenId[tokenId_] != address(0)) {
             return IMinimalMetadata(nftAddressForTokenId[tokenId_]).tokenURI(transferredNfts[tokenId_]);
@@ -71,12 +82,8 @@ contract RainbowMix is Ownable, ERC404 {
         _setERC721TransferExempt(account_, value_);
     }
 
-    /**
-     * @notice Get the next available token ID
-     * @return The next available token ID
-     */
     function _getNextTokenId() private returns (uint256) {
-        require(_erc20TokenIdCounter < GROUP_SIZE * TOTAL_GROUPS, "Max supply reached");
+        if (_erc20TokenIdCounter >= GROUP_SIZE * TOTAL_GROUPS) revert MaxSupplyReached();
         uint256 startIdOfGroup = _groupCounter * GROUP_SIZE + 1;
         uint256 nextIdInGroup = startIdOfGroup + _idsAllocatedInGroup[_groupCounter];
         _idsAllocatedInGroup[_groupCounter]++;
@@ -96,16 +103,11 @@ contract RainbowMix is Ownable, ERC404 {
         emit NftTransferred(erc20TokenId, nftTokenId, nftAddress);
     }
 
-    /**
-     * @notice Transfer an NFT to this contract and bind it to an ERC20 token, setting a reward for the transfer
-     * @param nftTokenId The ID of the NFT token
-     * @param nftAddress The address of the NFT contract
-     */
     function transferNft(uint256 nftTokenId, address nftAddress) external {
-        require(allowedNftAddresses[nftAddress], "NFT address not allowed");
+        if (!allowedNftAddresses[nftAddress]) revert NftAddressNotAllowed();
         AllowedTokenInfo storage allowedInfo = allowedTokenInfos[nftAddress];
-        require(allowedInfo.allowAllTokens || allowedInfo.specificAllowedTokens[nftTokenId], "Token ID not allowed");
-        require(_erc20TokenIdCounter < TOTAL_SUPPLY, "Max NFTs reached");
+        if (!(allowedInfo.allowAllTokens || allowedInfo.specificAllowedTokens[nftTokenId])) revert TokenIdNotAllowed();
+        if (_erc20TokenIdCounter >= TOTAL_SUPPLY) revert MaxNftsReached();
 
         _transferNftAndBind(nftTokenId, nftAddress);
 
@@ -116,14 +118,10 @@ contract RainbowMix is Ownable, ERC404 {
         }
     }
 
-    /**
-     * @notice Claim rewards for transferring NFTs (after time lock 14 days)
-     */
     function claimRewards() external {
-        require(block.timestamp >= timeLock[msg.sender], "Time lock not expired");
-
+        if (block.timestamp < timeLock[msg.sender]) revert TimeLockNotExpired();
         uint256 reward = claimableRewards[msg.sender];
-        require(reward > 0, "No rewards to claim");
+        if (reward <= 0) revert NoRewardsToClaim();
 
         _mintERC20(msg.sender, reward * units);
         claimableRewards[msg.sender] = 0;
@@ -132,74 +130,62 @@ contract RainbowMix is Ownable, ERC404 {
         emit RewardsClaimed(msg.sender, reward);
     }
 
-    /**
-     * @notice Transfer multiple NFTs to this contract and bind them to ERC20 tokens
-     * @param nftTokenIds The IDs of the NFT tokens
-     * @param nftAddresses The addresses of the NFT contracts
-     */
     function directTransferNfts(uint256[] calldata nftTokenIds, address[] calldata nftAddresses) external onlyOwner {
         for (uint256 i = 0; i < nftTokenIds.length; i++) {
             _transferNftAndBind(nftTokenIds[i], nftAddresses[i]);
         }
     }
 
-    /**
-     * @notice Set whether a specific NFT contract is allowed (donation or OTC)
-     * @param nftAddress The address of the NFT contract
-     * @param allowed Whether the NFT contract is allowed
-     */
     function updateAllowedNftAddress(address nftAddress, bool allowed) external onlyOwner {
         allowedNftAddresses[nftAddress] = allowed;
     }
 
-    /**
-     * @notice Set whether a specific token ID is allowed for a given NFT contract (donation or OTC)
-     * @param nftAddress The address of the NFT contract
-     * @param tokenIds The IDs of the NFT tokens
-     * @param allowed Whether the tokens are allowed
-     */
     function allowTokenIds(address nftAddress, uint256[] calldata tokenIds, bool allowed) external onlyOwner {
         for (uint256 i = 0; i < tokenIds.length; i++) {
             allowedTokenInfos[nftAddress].specificAllowedTokens[tokenIds[i]] = allowed;
         }
     }
 
-    /**
-     * @notice Set whether all tokens are allowed for a given NFT contract (donation or OTC)
-     * @param nftAddress The address of the NFT contract
-     * @param allow Whether all tokens are allowed
-     */
     function setAllowAllTokens(address nftAddress, bool allow) external onlyOwner {
         allowedTokenInfos[nftAddress].allowAllTokens = allow;
     }
 
-    /**
-     * @notice Add rewards for transferring NFTs
-     * @param tokenIds The IDs of the NFT tokens
-     * @param nftAddress The address of the NFT contract
-     * @param amount The amount of rewards to add
-     */
     function addTransferNftReward(uint256[] calldata tokenIds, address nftAddress, uint256 amount) external onlyOwner {
-        require(totalRewardsAllocated + amount * tokenIds.length <= MAX_REWARDS, "Exceeds maximum rewards limit");
+        if (totalRewardsAllocated + amount * tokenIds.length > MAX_REWARDS) revert MaxSupplyReached();
         for (uint256 i = 0; i < tokenIds.length; i++) {
             nftTransferRewards[nftAddress][tokenIds[i]] = amount;
         }
         totalRewardsAllocated += amount * tokenIds.length;
     }
 
-    /**
-     * @notice Allows the contract owner to redeem an NFT held by the contract. IMPORTANT to trust the owner.
-     * @param nftTokenId The ID of the NFT to redeem.
-     * @param nftAddress The address of the NFT contract.
-     */
-    function emergencyRedeemNft(uint256 nftTokenId, address nftAddress) external onlyOwner {
-        require(canRedeem, "Redemption is disabled");
-        require(nftAddressForTokenId[nftTokenId] == nftAddress, "NFT does not match stored address");
+    function emergencyRedeem(uint256 nftTokenId, address nftAddress) external onlyOwner {
+        if (!canRedeem) revert RedemptionDisabled();
+        if (nftAddressForTokenId[nftTokenId] != nftAddress) revert NftDoesNotMatchStoredAddress();
         IMinimalTransfer nftContract = IMinimalTransfer(nftAddress);
 
-        // Transfer the NFT from the contract to the owner.
         nftContract.transferFrom(address(this), owner(), nftTokenId);
 
         delete nftAddressForTokenId[nftTokenId];
+    }
+
+    function claimNFT(uint256 erc20TokenId) public {
+        if (!redemption.canRedeem(erc20TokenId)) revert RedemptionPeriodNotPassed();
+        if (nftAddressForTokenId[erc20TokenId] == address(0)) revert NoNftAssociatedWithToken();
+        if (ownerOf(erc20TokenId) != msg.sender) revert NotTheTokenOwner();
+
+        address nftAddress = nftAddressForTokenId[erc20TokenId];
+        uint256 nftTokenId = transferredNfts[erc20TokenId];
+
+        IMinimalTransfer(nftAddress).transferFrom(address(this), msg.sender, nftTokenId);
+        redemption.clearRedemption(erc20TokenId);
+
+        delete transferredNfts[erc20TokenId];
+        delete nftAddressForTokenId[erc20TokenId];
+
+        emit NFTClaimed(msg.sender, erc20TokenId, nftAddress, nftTokenId);
+    }
+
+    function startRedemption(uint256 tokenId) public {
+        redemption.startRedemption(tokenId);
     }
 }

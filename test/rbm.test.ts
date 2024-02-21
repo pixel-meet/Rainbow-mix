@@ -117,7 +117,7 @@ describe("RainbowMix", function () {
 
       // Attempt to claim rewards before time lock expires
       await expect(rainbowMix.connect(addr1).claimRewards())
-        .to.be.revertedWith("Time lock not expired");
+        .to.be.revertedWithCustomError(rainbowMix, "TimeLockNotExpired");
     });
 
     it("Allows rewards claim after time lock expires", async function () {

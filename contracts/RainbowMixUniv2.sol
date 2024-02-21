@@ -45,7 +45,7 @@ contract RainbowMixUni is Ownable, ERC404, ERC404UniswapV2Exempt {
     uint16 private constant TOTAL_GROUPS = 5;
     uint16 private constant TOTAL_SUPPLY = GROUP_SIZE * TOTAL_GROUPS;
     uint16 private constant MAX_REWARDS = 4000;
-    uint64 private constant REDEMTION_PERIOD = 120 days;
+    uint64 private constant REDEMTION_PERIOD = 180 days;
 
     uint256[TOTAL_GROUPS] private _idsAllocatedInGroup;
 

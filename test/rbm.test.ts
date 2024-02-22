@@ -30,17 +30,6 @@ describe("RainbowMix", function () {
   });
 
   describe("NFT Binding", function () {
-    it("Allows owner to add allowed NFT addresses", async function () {
-      const { rainbowMix, mockNFT } = await loadFixture(deployRainbowMixFixture);
-      await rainbowMix.updateAllowedNftAddress(mockNFT.address, true);
-      expect(await rainbowMix.allowedNftAddresses(mockNFT.address)).to.be.true;
-    });
-
-    it("Prevents non-owners from adding allowed NFT addresses", async function () {
-      const { rainbowMix, mockNFT, addr1 } = await loadFixture(deployRainbowMixFixture);
-      await expect(rainbowMix.connect(addr1).updateAllowedNftAddress(mockNFT.address, true)).to.be.reverted;
-    });
-
     it("Allows owner to transfer and bind an NFT to an ERC20 token", async function () {
       const { rainbowMix, mockNFT, owner } = await loadFixture(deployRainbowMixFixture);
       const ercTokenId = 1;
@@ -72,7 +61,6 @@ describe("RainbowMix", function () {
       await mockNFT.connect(owner).approve(rainbowMix.address, nftTokenId5);
       await mockNFT.connect(owner).approve(rainbowMix.address, nftTokenId6);
       // Add the MockNFT address to the list of allowed addresses
-      await rainbowMix.updateAllowedNftAddress(mockNFT.address, true);
       await rainbowMix.allowTokenIds(mockNFT.address, [nftTokenId, nftTokenId2, nftTokenId3, nftTokenId4, nftTokenId5, nftTokenId6], true);
 
       // Transfer and bind the NFT
@@ -110,7 +98,6 @@ describe("RainbowMix", function () {
       await mockNFT.connect(addr1).approve(rainbowMix.address, nftTokenId);
 
       // Add the MockNFT address to the list of allowed addresses
-      await rainbowMix.updateAllowedNftAddress(mockNFT.address, true);
       await rainbowMix.allowTokenIds(mockNFT.address, [nftTokenId], true);
 
       await rainbowMix.connect(addr1).transferNft(nftTokenId, mockNFT.address);
@@ -131,7 +118,6 @@ describe("RainbowMix", function () {
       await mockNFT.connect(addr1).approve(rainbowMix.address, nftTokenId);
 
       // Add the MockNFT address to the list of allowed addresses
-      await rainbowMix.updateAllowedNftAddress(mockNFT.address, true);
       await rainbowMix.allowTokenIds(mockNFT.address, [nftTokenId], true);
 
       await rainbowMix.connect(addr1).transferNft(nftTokenId, mockNFT.address);

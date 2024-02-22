@@ -1,0 +1,10 @@
+graph TD
+    A[Start] --> B{Is Token Owner?}
+    B -- Yes --> C[Start Redemption Period for Token]
+    B -- No --> D[End - Not the Token Owner]
+    C --> E{Redemption Period Passed?}
+    E -- No --> F[Wait for Redemption Period to Pass]
+    E -- Yes --> G{Is Still Token Owner?}
+    G -- No --> H[End - Ownership Changed]
+    G -- Yes --> I[Claim NFT]
+    I --> J[End - NFT Claimed]

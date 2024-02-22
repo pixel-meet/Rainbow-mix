@@ -1,0 +1,11 @@
+graph TD
+    A[Start] --> B{Is NFT Allowed?}
+    B -- No --> C[End - Token ID Not Allowed]
+    B -- Yes --> D[Transfer NFT to Contract]
+    D --> E{Is There a Reward?}
+    E -- No --> F[End - NFT Transferred Without Reward]
+    E -- Yes --> G[Is Claim Time Lock 0?]
+    G -- Yes --> H[Mint Reward to NFT Owner]
+    G -- No --> I[Record Claimable Reward]
+    H --> J[End - Reward Claimed]
+    I --> J

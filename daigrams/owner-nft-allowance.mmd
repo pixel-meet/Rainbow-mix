@@ -1,0 +1,9 @@
+graph TD
+    A[Start] --> B{Is Owner?}
+    B -- Yes --> C[Choose Allowance Type]
+    C -->|Specific Token IDs| D[Specify Allowed Token IDs]
+    C -->|Allow All Tokens?| E[Set Allow All Tokens for a Contract]
+    D --> F[Optionally Add Transfer NFT Reward]
+    E --> F
+    B -- No --> G[End - Access Denied]
+    F --> H[End - Setup Complete]

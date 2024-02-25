@@ -18,6 +18,7 @@ error NoNftAssociatedWithToken();
 error NotTheTokenOwner();
 error RedemptionPeriodNotPassed();
 error ClaimTimeLockNotPassed();
+error InvalidRedemptionPeriod();
 
 interface IMinimalTransfer {
     function transferFrom(address from, address to, uint256 tokenId) external;
@@ -59,9 +60,11 @@ contract RainbowMix is Ownable, ERC404 {
     // General constants for the contract
     uint16 private constant TOTAL_SUPPLY = GROUP_SIZE * TOTAL_GROUPS;
     uint16 private constant MAX_REWARDS = 4000;
-    uint64 private constant REDEMTION_PERIOD = 180 days;
     uint64 private constant MAX_CLAIM_TIME_LOCK = 7 days;
-    uint64 private claimTimeLock = 1 days;
+    uint64 private constant MAX_REDEMTION_PERIOD = 360 days;
+    uint64 private constant MIN_REDEMTION_PERIOD = 60 days;
+    
+    uint64 private claimTimeLock = 0 days;
 
     struct AllowedTokenInfo {
         bool allowAllTokens;
@@ -79,7 +82,7 @@ contract RainbowMix is Ownable, ERC404 {
     constructor() ERC404("RainbowMix", "RBM", 18) Ownable(msg.sender) {
         _setERC721TransferExempt(msg.sender, true);
         _mintERC20(msg.sender, (TOTAL_SUPPLY - MAX_REWARDS) * units);
-        redemption.initialize(REDEMTION_PERIOD);
+        redemption.initialize(60 days);
     }
 
     /**
@@ -96,6 +99,15 @@ contract RainbowMix is Ownable, ERC404 {
     function setClaimTimeLock(uint64 timeLock_) external onlyOwner {
         if (timeLock_ > MAX_CLAIM_TIME_LOCK) revert ClaimTimeLockNotPassed();
         claimTimeLock = timeLock_;
+    }
+
+    /**
+     * @notice Set the redemption period for the contract
+     * @param period The redemption period
+     */
+    function setRedemptionPeriod(uint64 period) external onlyOwner {
+        if (period > MAX_REDEMTION_PERIOD || period < MIN_REDEMTION_PERIOD) revert InvalidRedemptionPeriod();
+        redemption.initialize(period);
     }
 
     /**

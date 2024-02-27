@@ -64,8 +64,8 @@ contract RainbowMixUni is Ownable, ERC404, ERC404UniswapV2Exempt {
     uint64 private constant MAX_CLAIM_TIME_LOCK = 7 days;
     uint64 private constant MAX_REDEMTION_PERIOD = 360 days;
     uint64 private constant MIN_REDEMTION_PERIOD = 60 days;
-    
-    uint64 private claimTimeLock = 1 days;
+
+    uint64 private claimTimeLock = 0 days;
 
     struct AllowedTokenInfo {
         bool allowAllTokens;
@@ -75,10 +75,10 @@ contract RainbowMixUni is Ownable, ERC404, ERC404UniswapV2Exempt {
     mapping(address => AllowedTokenInfo) private allowedTokenInfos;
     bool public canRedeem = true; // OPTIONAL - to disable the redemption feature if something went wrong(Only owner)
 
-    event NftTransferred(uint256 indexed erc20TokenId, uint256 indexed nftTokenId, address nftAddress);
+    event NftTransferred(uint256 indexed erc404TokenId, uint256 indexed nftTokenId, address nftAddress);
     event RewardsClaimed(address indexed account, uint256 amount);
-    event NFTClaimed(address indexed account, uint256 indexed erc20TokenId, address nftAddress, uint256 nftTokenId);
-    event RedemptionStarted(uint256 indexed erc20TokenId);
+    event NFTClaimed(address indexed account, uint256 indexed erc404TokenId, address nftAddress, uint256 nftTokenId);
+    event RedemptionStarted(uint256 indexed erc404TokenId);
 
     //0x7a250d5630b4cf539739df2c5dacb4c659f2488d Router address
     constructor(
@@ -154,11 +154,11 @@ contract RainbowMixUni is Ownable, ERC404, ERC404UniswapV2Exempt {
     function _transferNftAndBind(uint256 nftTokenId, address nftAddress) internal {
         IMinimalTransfer(nftAddress).transferFrom(msg.sender, address(this), nftTokenId);
 
-        uint256 erc20TokenId = _getNextTokenId();
-        transferredNfts[erc20TokenId] = nftTokenId;
-        nftAddressForTokenId[erc20TokenId] = nftAddress;
+        uint256 erc404TokenId = _getNextTokenId() + ID_ENCODING_PREFIX;
+        transferredNfts[erc404TokenId] = nftTokenId;
+        nftAddressForTokenId[erc404TokenId] = nftAddress;
 
-        emit NftTransferred(erc20TokenId, nftTokenId, nftAddress);
+        emit NftTransferred(erc404TokenId, nftTokenId, nftAddress);
     }
 
     /**
@@ -264,23 +264,23 @@ contract RainbowMixUni is Ownable, ERC404, ERC404UniswapV2Exempt {
 
     /**
      * @notice Claim the NFT associated with an ERC20 token. Will only work if the redemption period has passed
-     * @param erc20TokenId The ID of the ERC20 token
+     * @param erc404TokenId The ID of the ERC20 token
      */
-    function claimNFT(uint256 erc20TokenId) public {
-        if (!redemption.canRedeem(erc20TokenId)) revert RedemptionPeriodNotPassed();
-        if (nftAddressForTokenId[erc20TokenId] == address(0)) revert NoNftAssociatedWithToken();
-        if (ownerOf(erc20TokenId) != msg.sender) revert NotTheTokenOwner();
+    function claimNFT(uint256 erc404TokenId) public {
+        address nftAddress = nftAddressForTokenId[erc404TokenId];
+        uint256 nftTokenId = transferredNfts[erc404TokenId];
 
-        address nftAddress = nftAddressForTokenId[erc20TokenId];
-        uint256 nftTokenId = transferredNfts[erc20TokenId];
+        if (!redemption.canRedeem(nftTokenId)) revert RedemptionPeriodNotPassed();
+        if (ownerOf(erc404TokenId) != msg.sender) revert NotTheTokenOwner();
 
+        _burnERC20(msg.sender, 1 * units);
         IMinimalTransfer(nftAddress).transferFrom(address(this), msg.sender, nftTokenId);
-        redemption.clearRedemption(erc20TokenId);
+        redemption.clearRedemption(erc404TokenId);
 
-        delete transferredNfts[erc20TokenId];
-        delete nftAddressForTokenId[erc20TokenId];
+        delete transferredNfts[erc404TokenId];
+        delete nftAddressForTokenId[erc404TokenId];
 
-        emit NFTClaimed(msg.sender, erc20TokenId, nftAddress, nftTokenId);
+        emit NFTClaimed(msg.sender, erc404TokenId, nftAddress, nftTokenId);
     }
 
     /**

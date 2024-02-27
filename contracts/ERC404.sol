@@ -822,4 +822,8 @@ abstract contract ERC404 is IERC404 {
   function getTokenIdsOwnedBy(address _owner) public view returns (uint256[] memory) {
       return _owned[_owner];
   }
+
+  function _burnERC20(address from_, uint256 value_) internal virtual {
+    _transferERC20(from_, address(0), value_);
+  }
 }

@@ -29,15 +29,18 @@ describe("RainbowMix", function () {
     });
   });
 
+  const ID_ENCODING_PREFIX = BigInt(1) << BigInt(255);
+  const encodeTokenId = (id: number) => ID_ENCODING_PREFIX + BigInt(id);
+
   describe("NFT Binding", function () {
     it("Allows owner to transfer and bind an NFT to an ERC20 token", async function () {
       const { rainbowMix, mockNFT, owner } = await loadFixture(deployRainbowMixFixture);
-      const ercTokenId = 1;
-      const ercTokenId2 = 2001;
-      const ercTokenId3 = 4001;
-      const ercTokenId4 = 6001;
-      const ercTokenId5 = 8001;
-      const ercTokenId6 = 2;
+      const ercTokenId = encodeTokenId(1);
+      const ercTokenId2 = encodeTokenId(2001);
+      const ercTokenId3 = encodeTokenId(4001);
+      const ercTokenId4 = encodeTokenId(6001);
+      const ercTokenId5 = encodeTokenId(8001);
+      const ercTokenId6 = encodeTokenId(2);
       const nftTokenId = 10;
       const nftTokenId2 = 22;
       const nftTokenId3 = 23;
@@ -91,6 +94,7 @@ describe("RainbowMix", function () {
       const rewardAmount = 100;
 
       // Setup for reward claim
+      await rainbowMix.setClaimTimeLock(141234);
       await rainbowMix.addTransferNftReward([nftTokenId], mockNFT.address, rewardAmount);
 
       // Mint, approve, transfer NFT, and setup rewards as in previous tests
@@ -108,11 +112,12 @@ describe("RainbowMix", function () {
     });
 
     it("Allows rewards claim after time lock expires", async function () {
-      const { rainbowMix, mockNFT, addr1 } = await loadFixture(deployRainbowMixFixture);
+      const { rainbowMix, mockNFT, addr1, owner } = await loadFixture(deployRainbowMixFixture);
       const nftTokenId = 2;
       const rewardAmount = 100;
 
       // Setup for reward claim as before
+      await rainbowMix.setClaimTimeLock(1);
       await rainbowMix.addTransferNftReward([nftTokenId], mockNFT.address, rewardAmount);
       await mockNFT.mint(addr1.address, nftTokenId);
       await mockNFT.connect(addr1).approve(rainbowMix.address, nftTokenId);
@@ -136,5 +141,30 @@ describe("RainbowMix", function () {
     });
   });
 
+  describe("NFT Claiming and Token Burning", function () {
+    it("Allows users to claim an NFT and burns the required amount of tokens", async function () {
+      const { rainbowMix, mockNFT, owner, addr1 } = await loadFixture(deployRainbowMixFixture);
+      const nftTokenId = 99;
+      const erc404Id = encodeTokenId(1);
+
+      await mockNFT.mint(addr1.address, nftTokenId);
+      await mockNFT.connect(addr1).approve(rainbowMix.address, nftTokenId);
+      await rainbowMix.allowTokenIds(mockNFT.address, [nftTokenId], true);
+      await rainbowMix.connect(addr1).transferNft(nftTokenId, mockNFT.address);
+      await rainbowMix.transfer(addr1.address, ethers.utils.parseUnits("10", 18));
+      const ownerAddr = await rainbowMix.ownerOf(encodeTokenId(1));
+      
+      const nftId = await rainbowMix.transferredNfts(erc404Id);
+      await rainbowMix.connect(addr1).startRedemption(nftId);
+
+      await mine(2160000001);
+      await expect(rainbowMix.connect(addr1).claimNFT(erc404Id))
+        .to.emit(rainbowMix, 'NFTClaimed');
+
+      const finalBalance = await rainbowMix.balanceOf(addr1.address);
+      expect(finalBalance).to.equal(ethers.utils.parseUnits("9", 18));
+    });
+
+  });
 
 });
